@@ -661,6 +661,17 @@ async function runPayCycle(kind) {
           sweepGasFields = feeData.maxFeePerGas
             ? { maxFeePerGas: feeData.maxFeePerGas, maxPriorityFeePerGas: feeData.maxPriorityFeePerGas ?? feeData.maxFeePerGas }
             : { gasPrice: feeData.gasPrice };
+          if (NATIVE_GAS_LIMIT <= 0n) {
+            // estimate like the payout path — never send real ETH on a guessed
+            // limit (Orbit L2 gas is well above 21k; an out-of-gas sweep would
+            // credit growth for ETH that never moved)
+            try {
+              const est = await provider.estimateGas({ from: wallet.address, to: GROWTH_WALLET, value: candidate });
+              sweepGasLimit = est * 2n; // 100% headroom
+              if (sweepGasLimit < 40_000n) sweepGasLimit = 40_000n;
+            } catch { sweepGasLimit = 100_000n; }
+            lastGasLimit = sweepGasLimit;
+          }
         }
         // only sweep when the amount comfortably dwarfs its own gas (3x)
         if (candidate > sweepGasLimit * sweepMaxFee * 3n) {
